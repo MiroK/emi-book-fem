@@ -1,18 +1,12 @@
 # Mixed, singlescale
 from dolfin import *
 from xii import *
-import numpy as np
-from weak_bcs.utils import (matrix_fromHs, mat_add,
-                            Hdiv_norm, L2_norm, broken_L2_norm, broken_norm, Aerror,
-                            Hs_norm)
-from weak_bcs.bc_apply import apply_bc
-import weak_bcs.emi_book_fem.common as common
-from hsmg.hseig import HsNorm
-from block.algebraic.petsc import LU
+from emi.utils import Hdiv_norm, L2_norm, broken_norm
+import emi.fem.common as common
 
 
 def setup_problem(n, mms, params):
-    '''Domain decomposition for Laplacian'''
+    '''Single-dimensional mixed formulation'''
     base_mesh = UnitSquareMesh(mpi_comm_self(), *(n, )*2)
 
     # Marking of intra/extra-cellular domains
@@ -145,110 +139,13 @@ def setup_error_monitor(mms_data, params):
         
         return (broken_norm(Hdiv_norm, subdomains[:])(sigma_exact[:], sigmah),
                 broken_norm(L2_norm, subdomains[:])(u_exact[:], uh),
-                #broken_norm(Hs_norm(-0.5), ifaces)(I_exact, Ih),
-                #Hs_norm(0.5)(p_exact, ph))
                 L2_norm(p_exact, ph),
                 L2_norm(p_exact, ph_E))
-                
 
     error_types = ('|sigma|_div', '|u|_0', '|v|_{0I}', '|v|_{0E}')
     
     return get_error, error_types
-
-
-def wGamma_inner_product(W, mms, params):
-    '''Add iface part to Hdiv'''
-    V, Q = W
-    kappa1 = Constant(params.kappa)
-
-    # Hdiv norm with piecewise conductivities
-    mesh = V.mesh()
-    cell_f = MeshFunction('size_t', mesh, mesh.topology().dim(), 0)
-
-    outside, inside = mms.subdomains[2]
-    CompiledSubDomain(outside, tol=1E-10).mark(cell_f, 0)  # Not needed
-    CompiledSubDomain(inside, tol=1E-10).mark(cell_f, 1)
-    # These are just auxiliary so that interface can be grabbed
-    inner_mesh = SubMesh(mesh, cell_f, 1)  # Inside
-    interface_mesh = BoundaryMesh(inner_mesh, 'exterior')
-
-    n = OuterNormal(interface_mesh, [0.5, 0.5])
-    # 0 is outside and that is where we have kappa
-    sigma, tau = TrialFunction(V), TestFunction(V)
-    Tsigma, Ttau = (Trace(f, interface_mesh, '+', n) for f in (sigma, tau))
-    
-    dX = Measure('dx', subdomain_data=cell_f)
-    dx_ = Measure('dx', domain=interface_mesh)
-
-    epsilon = Constant(params.eps)
-
-    V_norm = ii_convert(ii_assemble(
-        inner(sigma, tau)*dX(0) +
-        inner(sigma, tau)*dX(1) +
-        epsilon*inner(dot(Tsigma, n), dot(Ttau, n))*dx_ +
-        inner(div(sigma), div(tau))*dX))
-
-    p, q = TrialFunction(Q), TestFunction(Q)
-    Q_norm_L2 = assemble(inner(p, q)*dx)
-    
-    return block_diag_mat([V_norm, Q_norm_L2])
-
-
-def cannonical_inner_product(W, mms, params):
-    '''Based on spaces'''
-    V, Q = W
-    kappa1 = Constant(params.kappa)
-
-    # Hdiv norm with piecewise conductivities
-    mesh = V.mesh()
-    cell_f = MeshFunction('size_t', mesh, mesh.topology().dim(), 0)
-    # Mark
-    [CompiledSubDomain(subd, tol=1E-10).mark(cell_f, tag)
-     for tag, subd in enumerate(mms.subdomains[2])]
-    # 0 is outside and that is where we have kappa
-    sigma, tau = TrialFunction(V), TestFunction(V)
-    dX = Measure('dx', subdomain_data=cell_f)
-
-    V_norm = assemble(inner(sigma, tau)*dX(0) +
-                      inner(sigma, tau)*dX(1) +
-                      inner(div(sigma), div(tau))*dX)
-
-    p, q = TrialFunction(Q), TestFunction(Q)
-    Q_norm = assemble(inner(p, q)*dx)
-
-    return block_diag_mat([V_norm, Q_norm])
-
-
-def cannonical_riesz_map(W, mms, params):
-    '''Approx Riesz map w.r.t to H1 x Hdiv x L2'''
-    from block.algebraic.petsc import LU, AMG
-    # from weak_bcs.hypre_ams import HypreAMS
-
-    B = cannonical_inner_product(W, mms, params)
-    
-    return block_diag_mat([LU(B[0][0]), LU(B[1][1])])
-
-
-def wGamma_riesz_map(W, mms, params):
-    '''Approx Riesz map w.r.t to H1 x Hdiv x L2'''
-    from block.algebraic.petsc import LU, AMG
-    # from weak_bcs.hypre_ams import HypreAMS
-
-    B = wGamma_inner_product(W, mms, params)
-    
-    return block_diag_mat([LU(B[0][0]), LU(B[1][1])])
-
-# --------------------------------------------------------------------
-
-# The idea now that we refister the inner product so that from outside
-# of the module they are accessible without referring to them by name
-W_INNER_PRODUCTS = {0: cannonical_inner_product,
-                    1: wGamma_inner_product}
-
-# And we do the same for preconditioners / riesz maps
-W_RIESZ_MAPS = {0: cannonical_riesz_map,
-                1: wGamma_riesz_map}
-
+                
 # --------------------------------------------------------------------
 
 # How is the problem parametrized

@@ -1,6 +1,9 @@
-from dolfin import Function, LUSolver, FunctionSpace
+from dolfin import (Function, LUSolver, FunctionSpace, errornorm, interpolate,
+                    Expression, CompiledSubDomain, MeshFunction, SubMesh, sqrt)
 from collections import namedtuple
 from xii import ii_Function
+import numpy.ma as mask
+import numpy as np
 import itertools
 import ufl
 
@@ -139,3 +142,118 @@ def split_jobs(comm, jobs):
     assert my_jobs
 
     return my_jobs
+
+
+H1_norm = lambda u, uh, degree_rise=2: errornorm(u, uh, 'H1', degree_rise=degree_rise)
+
+Hdiv_norm = lambda u, uh, degree_rise=2: errornorm(u, uh, 'Hdiv', degree_rise=degree_rise)
+
+L2_norm = lambda u, uh, degree_rise=2: errornorm(u, uh, 'L2', degree_rise=degree_rise)
+
+
+def subdomain_interpolate(pairs, V, reduce='last'):
+    '''(f, chi), V -> Function fh in V such that fh|chi is f'''
+    array = lambda f: f.vector().get_local()
+    fs, chis = zip(*pairs)
+    
+    fs = np.column_stack([array(interpolate(f, V)) for f in fs])
+    x = np.column_stack([array(interpolate(Expression('x[%d]' % i, degree=1), V)) for i in range(V.mesh().geometry().dim())])
+
+    chis = [CompiledSubDomain(chi, tol=1E-10) for chi in chis]
+    is_masked = np.column_stack([map(lambda xi, chi=chi: not chi.inside(xi, False), x) for chi in chis])
+
+    fs = mask.masked_array(fs, is_masked)
+
+    if reduce == 'avg':
+        values = np.mean(fs, axis=1)
+    elif reduce == 'max':
+        values = np.choose(np.argmax(fs, axis=1), fs.T)
+    elif reduce == 'min':
+        values = np.choose(np.argmin(fs, axis=1), fs.T)
+    elif reduce == 'first':
+        choice = [row.tolist().index(False) for row in is_masked]
+        values = np.choose(choice, fs.T)
+    elif reduce == 'last':
+        choice = np.array([row[::-1].tolist().index(False) for row in is_masked], dtype=int)
+        nsubs = len(chis)
+        values = np.choose(nsubs-1-choice, fs.T)        
+    else:
+        raise ValueError
+
+    fh = Function(V)
+    fh.vector().set_local(values)
+
+    return fh
+
+
+def broken_norm(norm, subdomains, mesh=None):
+    '''Eval norm on subdomains and combine'''
+    # Subdomains can be string -> get compile
+    if isinstance(first(subdomains), str):
+        subdomains = [CompiledSubDomain(s, tol=1E-10) for s in subdomains]
+        mesh = None
+
+        def get_norm(u, uh):
+            assert len(subdomains) == len(u)
+    
+            V = uh.function_space()
+            mesh = V.mesh()
+            cell_f = MeshFunction('size_t', mesh, mesh.topology().dim(), 0)
+
+            error = 0
+            for subd_i, u_i in zip(subdomains, u):
+                cell_f.set_all(0)  # Reset!
+                # Pick an edge
+                subd_i.mark(cell_f, 1)
+                mesh_i = SubMesh(mesh, cell_f, 1)
+                # Edge local function space
+                Vi = FunctionSpace(mesh_i, V.ufl_element())
+                # The solution on it
+                uh_i = interpolate(uh, Vi)
+                # And the error there
+                error_i = norm(u_i, uh_i)
+                error += error_i**2
+            error = sqrt(error)
+            return error
+        # Done
+        return get_norm
+
+    # CompiledSubDomain -> will be used to mark (go to base case)
+    if hasattr(first(subdomains), 'mark'):
+        return broken_norm(norm, subdomains, mesh=mesh)
+    
+    # Tuples of (tag, mesh_function)
+    # Do some consistency checks; same mesh
+    _, = set(first(p).mesh().id() for p in subdomains)
+    mesh = first(first(subdomains)).mesh()
+    # Cell functions ?
+    _, = set(first(p).dim() for p in subdomains)
+    dim = first(first(subdomains)).dim()
+
+    assert mesh.topology().dim() == dim
+
+    def get_norm(u, uh, mesh=mesh):
+        assert len(subdomains) == len(u)
+        
+        V = uh.function_space()
+        assert mesh.id() == V.mesh().id()
+
+        error = 0
+        # NOTE: u is tag -> solution
+        for subd, tag in subdomains:
+            mesh_i = SubMesh(mesh, subd, tag)
+            # Edge local function space
+            Vi = FunctionSpace(mesh_i, V.ufl_element())
+            # The solution on it
+            uh_i = interpolate(uh, Vi)
+            # And the error there
+            error_i = norm(u[tag], uh_i)
+            error += error_i**2
+        error = sqrt(error)
+        return error
+    # Done
+    return get_norm
+
+
+# First of anything (non-empty)
+def first(iterable): return next(iter(iterable))

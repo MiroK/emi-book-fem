@@ -1,7 +1,10 @@
-from weak_bcs.utils import MMSData
+from collections import namedtuple
 from dolfin import *
 import sympy as sp
 import ulfy
+
+
+MMSData = namedtuple('MMSData', ('solution', 'rhs', 'subdomains', 'normals'))
 
 
 def setup_mms(params):

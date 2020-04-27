@@ -1,17 +1,12 @@
 # Mixed, multiscale
 from dolfin import *
 from xii import *
-import numpy as np
-from weak_bcs.utils import (matrix_fromHs, mat_add,
-                            Hdiv_norm, L2_norm, broken_L2_norm, broken_norm, Aerror)
-from weak_bcs.bc_apply import apply_bc
-import weak_bcs.emi_book_fem.common as common
-from hsmg.hseig import HsNorm
-from block.algebraic.petsc import LU
+from emi.utils import Hdiv_norm, L2_norm, broken_norm
+import emi.fem.common as common
 
 
 def setup_problem(n, mms, params):
-    '''Domain decomposition for Laplacian'''
+    '''Multi-dimensional mixed formulation'''
     base_mesh = UnitSquareMesh(mpi_comm_self(), *(n, )*2)
 
     # Marking of intra/extra-cellular domains
@@ -103,73 +98,16 @@ def setup_error_monitor(mms_data, params):
         # Compute Hs norm on finer space
         Q = ph.function_space()
         Q = FunctionSpace(Q.mesh(), 'CG', 1)
-        Hs = matrix_fromHs(HsNorm(Q, s=0.5))
         # Use interpolated
         ph = interpolate(ph, Q)
             
         return (broken_norm(Hdiv_norm, subdomains[:])(sigma_exact[:], sigmah),
                 broken_norm(L2_norm, subdomains[:])(u_exact[:], uh),
-                # broken_L2_norm(p_exact, ph, ifaces))
-                # broken_norm(Hs_norm(-0.5), ifaces)(I_exact, Ih),
-                L2_norm(p_exact, ph),
-                Aerror(Hs, Q, p_exact, ph))
+                L2_norm(p_exact, ph))
     
-    error_types = ('|sigma|_div', '|u|_0', '|v|_0', '|v|_{0.5}')
+    error_types = ('|sigma|_div', '|u|_0', '|v|_0')
     
     return get_error, error_types
-
-
-def cannonical_inner_product(W, mms, params):
-    '''Just diagonal'''
-    V, Q, Y = W
-    kappa1 = Constant(params.kappa)
-
-    # Hdiv norm with piecewise conductivities
-    mesh = V.mesh()
-    cell_f = MeshFunction('size_t', mesh, mesh.topology().dim(), 0)
-    # Mark
-    [CompiledSubDomain(subd, tol=1E-10).mark(cell_f, tag)
-     for tag, subd in enumerate(mms.subdomains[2])]
-    # 0 is outside and that is where we have kappa
-    sigma, tau = TrialFunction(V), TestFunction(V)
-    dX = Measure('dx', subdomain_data=cell_f)
-
-    V_norm = assemble((1./kappa1)*inner(sigma, tau)*dX(0) +
-                      inner(sigma, tau)*dX(1) +
-                      inner(div(sigma), div(tau))*dX)
-
-    p, q = TrialFunction(Q), TestFunction(Q)
-    Q_norm = assemble(inner(p, q)*dx)
-
-    # Multiplier on the boundary
-    epsilon = Constant(params.eps)    
-    # Fractional part
-    Hs = matrix_fromHs(HsNorm(Y, s=0.5))  # Weight
-    
-    # L2 part
-    p, q = TrialFunction(Y), TestFunction(Y)
-    m = (1./epsilon)*inner(p, q)*dx
-    M = assemble(m)
-
-    Y_norm = mat_add(Hs, M)
-    
-    return block_diag_mat([V_norm, Q_norm, Y_norm])
-
-
-def cannonical_riesz_map(W, mms, params):
-    '''Approx Riesz map w.r.t to H1 x Hdiv x L2'''
-    B = cannonical_inner_product(W, mms, params)
-    
-    return block_diag_mat([LU(B[0][0]), LU(B[1][1]), LU(B[2][2])])
-
-# --------------------------------------------------------------------
-
-# The idea now that we refister the inner product so that from outside
-# of the module they are accessible without referring to them by name
-W_INNER_PRODUCTS = {0: cannonical_inner_product}
-
-# And we do the same for preconditioners / riesz maps
-W_RIESZ_MAPS = {0: cannonical_riesz_map}
 
 # --------------------------------------------------------------------
 

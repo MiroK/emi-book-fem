@@ -1,21 +1,14 @@
 # Primal, multiscale
 from dolfin import *
 from xii import *
-import numpy as np
-from weak_bcs.utils import (matrix_fromHs, mat_add,
-                            H1_norm, L2_norm, broken_L2_norm, broken_norm, Aerror,
-                            Hs_norm, subdomain_interpolate)
-from weak_bcs.bc_apply import apply_bc
-import weak_bcs.emi_book_fem.common as common
-from hsmg.hseig import HsNorm
-from block.algebraic.petsc import LU
-
-
+from emi.utils import H1_norm, L2_norm, subdomain_interpolate
+import emi.fem.common as common
 from xii.assembler.trace_matrix import trace_mat_no_restrict
 
 
+
 def setup_problem(n, mms, params):
-    '''Domain decomposition for Laplacian'''
+    '''Multi-dimensional primal formulation'''
     base_mesh = UnitSquareMesh(mpi_comm_self(), *(n, )*2)
     # Marking
     inside = ['(0.25-tol<x[0])', '(x[0] < 0.75+tol)', '(0.25-tol<x[1])', '(x[1] < 0.75+tol)']
@@ -120,9 +113,6 @@ def setup_error_monitor(mms_data, params):
         A, b = map(assemble, (a, L))
         solve(A, I_exact.vector(), b)
 
-        Hs = matrix_fromHs(HsNorm(Q, s=-0.5))
-        A_error = Aerror(Hs, Q, I_exact, ph)
-
         V = uh.function_space()
         mesh = V.mesh()
         #
@@ -165,69 +155,11 @@ def setup_error_monitor(mms_data, params):
         return (sqrt(H1_norm(u_exact[0], u1h)**2 + H1_norm(u_exact[1], uh)**2),
                 L2_norm(p_exact, vh),
                 L2_norm(p_exact, vh_P),
-                L2_norm(p_exact, vh_I),
-                A_error)# 
-                # broken_norm(Hs_norm(-0.5), subdomains)(p_exact, ph))
+                L2_norm(p_exact, vh_I))
     
-    error_types = ('|u|_1', '|v|_0', '|v|_{0P}', '|v|_{0I}', '|I|_{n0.5}')
+    error_types = ('|u|_1', '|v|_0', '|v|_{0P}', '|v|_{0I}')
     
     return get_error, error_types
-
-
-def cannonical_inner_product(W, mms, params):
-    '''H1 x H1 x ...'''
-    V1, V, Q = W
-    kappa = Constant(params.kappa)
-
-    # Outer, H1_0 
-    u, v = TrialFunction(V1), TestFunction(V1)
-
-    outer_mesh = V1.mesh()
-    
-    subdomains = mms.subdomains[0]  # 
-    facet_f = MeshFunction('size_t', outer_mesh, outer_mesh.topology().dim()-1, 0)
-    [subd.mark(facet_f, i) for i, subd in enumerate(map(CompiledSubDomain, subdomains), 1)]
-
-    bcs = [DirichletBC(V1, Constant(0), facet_f, i) for i in range(1, 1 + len(subdomains))]
-    
-    V1_norm, _ = assemble_system(inner(grad(u), grad(v))*dx,
-                                 inner(Constant(0), v)*dx,
-                                 bcs)
-
-    # Inner
-    u, v = TrialFunction(V), TestFunction(V)
-
-    V_norm = assemble(inner(grad(u), grad(v))*dx + inner(u, v)*dx)
-
-    # Multiplier on the boundary
-    # Fractional part
-    Hs = matrix_fromHs(HsNorm(Q, s=-0.5))
-
-    # L2 part
-    epsilon = Constant(params.eps)
-    p, q = TrialFunction(Q), TestFunction(Q)
-    m = epsilon*inner(p, q)*dx
-    M = assemble(m)
-
-    Q_norm = mat_add(Hs, M)
-
-    return block_diag_mat([V1_norm, V_norm, Q_norm])
-
-
-def cannonical_riesz_map(W, mms, params):
-    '''Approx Riesz map w.r.t to H1 x Hdiv x L2'''
-    B = cannonical_inner_product(W, mms, params)
-    
-    return block_diag_mat([LU(B[0][0]), LU(B[1][1]), LU(B[2][2])])
-
-# --------------------------------------------------------------------
-
-# The idea now that we refister the inner product so that from outside
-# of the module they are accessible without referring to them by name
-W_INNER_PRODUCTS = {0: cannonical_inner_product}
-
-# And we do the same for preconditioners / riesz maps
-W_RIESZ_MAPS = {0: cannonical_riesz_map}
 
 # --------------------------------------------------------------------
 
