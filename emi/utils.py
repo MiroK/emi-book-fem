@@ -6,6 +6,7 @@ import numpy.ma as mask
 import numpy as np
 import itertools
 import ufl
+import re
 
 
 def serialize_mixed_space(space):
