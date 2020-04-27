@@ -1,7 +1,7 @@
 # Solving the EMI equations using finite element methods
 
 This repository contains source codes and an environment used to produce
-results of the FEM chapter in the EMI book.
+results of the FEM chapter in the EMI book **EMI: CELL BASED MATHEMATICAL MODEL OF EXCITABLE CELLS**.
 
 ## Installation
 ### Obtaining the image
