@@ -68,3 +68,15 @@ global potential in the (broken) $H^1$ norm can be plotted.
 ## Troubleshooting
 Please use the GitHub issue tracker for reporting issues, discussing code
 contributions or requesting assistance.
+
+
+## Citing
+This code is based on several other packages in addition to [FEniCS](https://fenicsproject.org/citing/). 
+
+1. [**FEniCS_ii**](https://github.com/MiroK/fenics_ii) is used to perform assembly of the multiscale varitional forms
+2. [**cbc.block**](https://bitbucket.org/fenics-apps/cbc.block/src/master/) is used to represent the discrete operators
+
+These can be cited as
+
+1. _Kuchta, Miroslav. "Assembly of multiscale linear PDE operators." arXiv preprint arXiv:1912.09319 (2019)._
+2. _Mardal, Kent-Andre, and Joachim Berdal Haga. "Block preconditioning of systems of PDEs." Automated solution of differential equations by the finite element method. Springer, Berlin, Heidelberg, 2012. 643-655._
