@@ -5,16 +5,17 @@ results of the FEM chapter in the EMI book **EMI: CELL BASED MATHEMATICAL MODEL 
 
 ## Installation
 ### Obtaining the image
-The environment is provided as a docker container built on top of FEniCS
-2017.2.0 (which uses Python 2). The container can be built locally by
+The environment is provided as a docker container built on top of [FEniCS
+2017.2.0](https://fenicsproject.org/docs/dolfin/2017.2.0/python/) official 
+docker [image](https://quay.io/repository/fenicsproject/stable/manifest/sha256:c74da9c2956a16fa867167222cf88ab98de06db256ef06a4463cc51542094faa). 
+Note that we use python 2 in the code base.
+
+The container can be built and run locally by executing
 
 ```
+git clone https://github.com/MiroK/emi-book-fem.git
+cd emi-book-fem
 docker build --no-cache -t emi_book_fem .
-```
-from the root directory of this repository. You would then run the container
-as
-
-```
 docker run -it -v $(pwd):/home/fenics/shared emi_book_fem
 ```
 
@@ -38,11 +39,11 @@ cd emi
 sh test.sh
 ```
 
-If `You are all set message appears` everything is good to go.
+If `You are all set message` appears everything is good to go.
 
 ## Usage
 Results of the chapter can be obtained by running convergence studies of
-the different formulations. Below the single-dimensional primal formulation
+the different formulations. Below, the single-dimensional primal formulation
 is used
 
 ```
@@ -65,6 +66,15 @@ In the example below a header file of the result script can be seen.
 Therefore, extracting the first and third columns from the file a convergence of the 
 global potential in the (broken) $H^1$ norm can be plotted.
 
+Implementation of the four finite element formulations of the EMI model discussed in the 
+chapter can be found as modules in the `./emi/fem` folder 
+
+- Single-dimensional primal formulation in [`prime_single.py`](https://github.com/MiroK/emi-book-fem/blob/master/emi/fem/prime_single.py)
+- Single-dimensional mixed in [`mixed_single.py`](https://github.com/MiroK/emi-book-fem/blob/master/emi/fem/mixed_single.py)
+- Multi-dimensional primal formulation in [`prime_multi.py`](https://github.com/MiroK/emi-book-fem/blob/master/emi/fem/prime_multi.py)
+- Multi-dimensional mixed formulation in [`mixed_multi.py`](https://github.com/MiroK/emi-book-fem/blob/master/emi/fem/mixed_multi.py)
+
+
 ## Troubleshooting
 Please use the GitHub issue tracker for reporting issues, discussing code
 contributions or requesting assistance.
@@ -75,6 +85,8 @@ This code is based on several other packages in addition to [FEniCS](https://fen
 
 1. [**FEniCS_ii**](https://github.com/MiroK/fenics_ii) is used to perform assembly of the multiscale varitional forms
 2. [**cbc.block**](https://bitbucket.org/fenics-apps/cbc.block/src/master/) is used to represent the discrete operators
+3. [**ulfy**](https://github.com/MiroK/ulfy) is used to generate manufactured solutions
+4. [**quadpy**](https://github.com/nschloe/quadpy) is a dependency of 1.
 
 These can be cited as
 
