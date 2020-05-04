@@ -70,7 +70,7 @@ Implementation of the four finite element formulations of the EMI model discusse
 chapter can be found as modules in the `./emi/fem` folder 
 
 - Single-dimensional primal formulation in [`prime_single.py`](https://github.com/MiroK/emi-book-fem/blob/master/emi/fem/prime_single.py)
-- Single-dimensional mixed in [`mixed_single.py`](https://github.com/MiroK/emi-book-fem/blob/master/emi/fem/mixed_single.py)
+- Single-dimensional mixed in formulation [`mixed_single.py`](https://github.com/MiroK/emi-book-fem/blob/master/emi/fem/mixed_single.py)
 - Multi-dimensional primal formulation in [`prime_multi.py`](https://github.com/MiroK/emi-book-fem/blob/master/emi/fem/prime_multi.py)
 - Multi-dimensional mixed formulation in [`mixed_multi.py`](https://github.com/MiroK/emi-book-fem/blob/master/emi/fem/mixed_multi.py)
 
