@@ -46,9 +46,14 @@ def setup_mms(params):
 
     subs = {u: u_, u1: u1_, kappa: kappa_, kappa1: kappa1_, eps: eps_}
 
+    if hasattr(params, 'kappa'):
+        kappa1 = params.kappa
+    else:
+        kappa1 = 1
+    
     as_expression = lambda f: ulfy.Expression(f, subs=subs, degree=4,
                                               kappa=1,
-                                              kappa1=params.kappa,
+                                              kappa1=kappa1,
                                               eps=params.eps)
 
     # Solutions

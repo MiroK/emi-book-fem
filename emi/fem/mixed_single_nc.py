@@ -7,7 +7,14 @@ import emi.fem.common as common
 
 def setup_problem(n, mms, params):
     '''Single-dimensional mixed formulation'''
-    base_mesh = UnitSquareMesh(mpi_comm_self(), *(n, )*2)
+    # The n+1 make sure we don't get background mesh facets on Gamma
+    # It also results in the fact that the forces f1, f and coefficients
+    # kappa are not used exatly where they should be
+    # With n all is fine
+    base_mesh = UnitSquareMesh(mpi_comm_self(), *(n+1, )*2)
+
+    interface_mesh = BoundaryMesh(RectangleMesh(Point(0.25, 0.25), Point(0.75, 0.75), n/2, n/2),
+                                  'exterior')
 
     # Marking of intra/extra-cellular domains
     outside, inside = mms.subdomains[2]
@@ -16,9 +23,6 @@ def setup_problem(n, mms, params):
     CompiledSubDomain(outside, tol=1E-10).mark(cell_f, 0)  # Not needed
     CompiledSubDomain(inside, tol=1E-10).mark(cell_f, 1)
 
-    # These are just auxiliary so that interface can be grabbed
-    inner_mesh = SubMesh(base_mesh, cell_f, 1)  # Inside
-    interface_mesh = BoundaryMesh(inner_mesh, 'exterior')
     
     # Spaces
     V1 = FunctionSpace(base_mesh, 'RT', 1)
@@ -89,60 +93,11 @@ def setup_error_monitor(mms_data, params):
                   normals=mms_data.normals[0], params=params, mms=mms_data):
         sigmah, uh = wh
         sigma_exact, u_exact, p_exact, I_exact = exact
-        #########################################
-        # Get the difference by postprocessing
-        #########################################
-        base_mesh = sigmah.function_space().mesh()
-        
-        cell_f = MeshFunction('size_t', base_mesh, base_mesh.topology().dim(), 0)
-        CompiledSubDomain(subdomains[0], tol=1E-10).mark(cell_f, 0)  # Not needed
-        CompiledSubDomain(subdomains[1], tol=1E-10).mark(cell_f, 1)
-
-        # These are just auxiliary so that interface can be grabbed
-        inner_mesh = SubMesh(base_mesh, cell_f, 1)  # Inside
-        interface_mesh = BoundaryMesh(inner_mesh, 'exterior')
-
-        n = OuterNormal(interface_mesh, [0.5, 0.5])
-        dx_ = Measure('dx', domain=interface_mesh)
-        
-        Tu1 = Trace(uh, interface_mesh, '+', n)
-        Tu2 = Trace(uh, interface_mesh, '-', n)
-
-        Q = FunctionSpace(interface_mesh, 'DG', 0)
-        p, q = TrialFunction(Q), TestFunction(Q)
-        
-        a = inner(p, q)*dx
-        L = inner(Tu1 - Tu2, q)*dx_
-        ph = Function(Q)
-        
-        A, b = map(ii_convert, map(ii_assemble, (a, L)))
-        # L^2 projection
-        x = as_backend_type(ph.vector()).vec()
-        A = as_backend_type(A).mat().getDiagonal()
-        b =  as_backend_type(b).vec()
-        x.pointwiseDivide(b, A)
-
-        marking_f = MeshFunction('size_t', interface_mesh, interface_mesh.topology().dim(), 0)
-        [subd.mark(marking_f, i) for i, subd in enumerate(map(CompiledSubDomain, ifaces), 1)]
-        # The line integral
-        dx_ = Measure('dx', domain=interface_mesh, subdomain_data=marking_f)
-
-        eps = Constant(params.eps)
-        L = (sum(inner(gi, q)*dx_(i) for i, gi in enumerate(mms.rhs[3], 1)))
-        L += eps*inner(dot(Trace(sigmah, interface_mesh, '+', n), n), q)*dx_
-        
-        b = ii_convert(ii_assemble(L))
-        ph_E = Function(Q)
-        x = as_backend_type(ph_E.vector()).vec()
-        b =  as_backend_type(b).vec()
-        x.pointwiseDivide(b, A)
         
         return (broken_norm(Hdiv_norm, subdomains[:])(sigma_exact[:], sigmah),
-                broken_norm(L2_norm, subdomains[:])(u_exact[:], uh),
-                L2_norm(p_exact, ph),
-                L2_norm(p_exact, ph_E))
+                broken_norm(L2_norm, subdomains[:])(u_exact[:], uh))
 
-    error_types = ('|sigma|_div', '|u|_0', '|v|_{0I}', '|v|_{0E}')
+    error_types = ('|sigma|_div', '|u|_0')
     
     return get_error, error_types
                 
